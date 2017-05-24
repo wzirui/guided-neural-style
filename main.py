@@ -8,7 +8,7 @@ CONTENT_IMG = './images/Fig2a.jpg'
 STYLE_IMG = './images/Fig2b.jpg'
 TARGET_MASK = './images/Fig2a_guide.jpg'
 STYLE_MASK = './images/Fig2b_guide.jpg'
-MASK_TYPE = 'simple' # 'simple' 'test' 'colorful'
+MASK_TYPE = 'simple' # 'simple' 'binary' 'colorful'
 
 HARD_WIDTH = 256
 
@@ -31,8 +31,8 @@ CONTENT_WEIGHT = 1.
 STYLE_WEIGHT = 500.
 TV_WEIGHT = 1e-4
 
-LEARNING_RATE = 1.
-ITERATION = 3000
+LEARNING_RATE = 10.
+ITERATION = 1000
 LOG_ITERATION = 100
 
 OUTPUT_DIR = './output'
@@ -54,15 +54,16 @@ def read_image(path):   # read and preprocess
     return img
 
 def read_mask(path):   # read mask, (optional cluster to masks,), '1'-based
-    if MASK_TYPE == 'test':
+    if MASK_TYPE == 'binary':
         rawmask = scipy.misc.imread(path)
 
         #(resize)
         if HARD_WIDTH:
             rawmask = scipy.misc.imresize(rawmask, float(HARD_WIDTH) / rawmask.shape[1])
 
-        rawmask = rawmask.astype(np.float32) # rgb  
-        single = (rawmask.transpose([2, 0, 1]))[0]
+        rawmask = rawmask.astype(np.float32)   
+        if len(rawmask.shape) == 3: # rgb
+            single = (rawmask.transpose([2, 0, 1]))[0]
         single = single / 255.
         return np.stack([single, 1.-single])
 
@@ -199,103 +200,134 @@ def sum_style_loss(target_net, style_features, layers, layers_weights):
     style_loss /= float(sum(layers_weights))
     return style_loss    
 
+def sum_total_variation_loss(input, shape):
+    b, h, w, d = shape
+    x = input
+    tv_y_size = b * (h-1) * w * d
+    tv_x_size = b * h * (w-1) * d
+    loss_y = tf.nn.l2_loss(x[:,1:,:,:] - x[:,:-1,:,:])  # 1/2
+    loss_y /= tv_y_size
+    loss_x = tf.nn.l2_loss(x[:,:,1:,:] - x[:,:,:-1,:]) 
+    loss_x /= tv_x_size
+    loss = 2 * (loss_y + loss_x)
+    loss = tf.cast(loss, tf.float32) # ?
+    return loss
+
 '''
     main
 '''
 def  main():
-    
-'''
-init 
-'''   
-content_img = read_image(CONTENT_IMG)   # read & preprocess
+        
+    '''
+    init 
+    '''   
+    content_img = read_image(CONTENT_IMG)   # read & preprocess
 
-if MASK_TYPE == 'simple':
-    target_masks_origin = np.ones(content_img.shape[0:3]).astype(np.float32) #stack
-else:
-    target_masks_origin = read_mask(TARGET_MASK) 
+    if MASK_TYPE == 'simple':
+        target_masks_origin = np.ones(content_img.shape[0:3]).astype(np.float32) #stack
+    else:
+        target_masks_origin = read_mask(TARGET_MASK) 
 
-style_img = read_image(STYLE_IMG)       # read & preprocess
+    style_img = read_image(STYLE_IMG)       # read & preprocess
 
-if MASK_TYPE == 'simple':
-    style_masks_origin = np.ones(style_img.shape[0:3]).astype(np.float32) #stack
-else:
-    style_masks_origin = read_mask(STYLE_MASK)
+    if MASK_TYPE == 'simple':
+        style_masks_origin = np.ones(style_img.shape[0:3]).astype(np.float32) #stack
+    else:
+        style_masks_origin = read_mask(STYLE_MASK)
 
-init_img = get_init_image(INIT_TYPE, content_img, INIT_NOISE_RATIO)
+    init_img = get_init_image(INIT_TYPE, content_img, INIT_NOISE_RATIO)
 
-# check shape & number of masks
-if content_img.shape[1:3] != target_masks_origin.shape[1:3]:
-    print('content and mask have different shape')
-if style_img.shape[1:3] != style_masks_origin.shape[1:3]:
-    print('style and mask have different shape')
-if target_masks_origin.shape[0] != style_masks_origin.shape[0]:
-    print('content and style have different masks')
+    # check shape & number of masks
+    if content_img.shape[1:3] != target_masks_origin.shape[1:3]:
+        print('content and mask have different shape')
+    if style_img.shape[1:3] != style_masks_origin.shape[1:3]:
+        print('style and mask have different shape')
+    if target_masks_origin.shape[0] != style_masks_origin.shape[0]:
+        print('content and style have different masks')
 
-'''
-compute features & build net
-'''
-# prepare model
-vgg_weights = Model.prepare_model(MODEL_PATH)
+    '''
+    compute features & build net
+    '''
+    # prepare model
+    vgg_weights = Model.prepare_model(MODEL_PATH)
 
-# content features
-content_features = compute_features(vgg_weights, content_img, CONTENT_LAYERS)
-# style features
-style_features = compute_features(vgg_weights, style_img, STYLE_LAYERS)
+    # content features
+    content_features = compute_features(vgg_weights, content_img, CONTENT_LAYERS)
+    # style features
+    style_features = compute_features(vgg_weights, style_img, STYLE_LAYERS)
 
-# masks of layers
-target_masks = compute_layer_masks(target_masks_origin, STYLE_LAYERS)
-style_masks = compute_layer_masks(style_masks_origin, STYLE_LAYERS)
+    # masks of layers
+    target_masks = compute_layer_masks(target_masks_origin, STYLE_LAYERS)
+    style_masks = compute_layer_masks(style_masks_origin, STYLE_LAYERS)
 
-# build net
-target_net = build_target_net(vgg_weights, content_img.shape)
-
-
-'''
-loss 
-'''
-content_loss = sum_content_loss(target_net, content_features, 
-                                CONTENT_LAYERS, CONTENT_LAYERS_WEIGHTS,
-                                CONTENT_LOSS_NORMALIZATION)
-
-style_masked_loss = sum_masked_style_loss(target_net, style_features, 
-                                          target_masks, style_masks, 
-                                          STYLE_LAYERS, STYLE_LAYERS_WEIGHTS, 
-                                          MASK_NORMALIZATION_TYPE)
-#tv_loss
-tv_loss = 0.
-
-total_loss = CONTENT_WEIGHT * content_loss + \
-             STYLE_WEIGHT * style_masked_loss + \
-             TV_WEIGHT * tv_loss
+    # build net
+    target_net = build_target_net(vgg_weights, content_img.shape)
 
 
-'''
-train 
-'''
-optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
-train_op = optimizer.minimize(total_loss)
+    '''
+    loss 
+    '''
+    content_loss = sum_content_loss(target_net, content_features, 
+                                    CONTENT_LAYERS, CONTENT_LAYERS_WEIGHTS,
+                                    CONTENT_LOSS_NORMALIZATION)
 
-if not os.path.exists(OUTPUT_DIR):
-    os.mkdir(OUTPUT_DIR)
+    style_masked_loss = sum_masked_style_loss(target_net, style_features, 
+                                              target_masks, style_masks, 
+                                              STYLE_LAYERS, STYLE_LAYERS_WEIGHTS, 
+                                              MASK_NORMALIZATION_TYPE)
+    #tv_loss
+    tv_loss = sum_total_variation_loss(target_net['input'], content_img.shape)
 
-init_op = tf.global_variables_initializer() # must!
-sess = tf.Session()
-sess.run(init_op)
-sess.run( target_net['input'].assign(init_img) )
-for i in range(ITERATION):
-    sess.run(train_op)
-    if i % LOG_ITERATION == 0:
-        print('Iteration %d: loss = %f' % (i, sess.run(total_loss)))
-        result = sess.run(target_net['input'])
-        output_path = os.path.join(OUTPUT_DIR, 'result_%s.png' % (str(i).zfill(4)))
-        write_image(output_path, result)
+    total_loss = CONTENT_WEIGHT * content_loss + \
+                 STYLE_WEIGHT * style_masked_loss + \
+                 TV_WEIGHT * tv_loss
 
-'''
-out
-'''
-result = sess.run(target_net['input'])
-output_path = os.path.join(OUTPUT_DIR, 'result_final.png')
-write_image(output_path, result)
+
+    '''
+    train 
+    '''
+    '''
+    optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
+    train_op = optimizer.minimize(total_loss)
+
+    if not os.path.exists(OUTPUT_DIR):
+        os.mkdir(OUTPUT_DIR)
+
+    init_op = tf.global_variables_initializer() # must!
+    sess = tf.Session()
+    sess.run(init_op)
+    sess.run( target_net['input'].assign(init_img) )
+    for i in range(ITERATION):
+        sess.run(train_op)
+        if i % LOG_ITERATION == 0:
+            print('Iteration %d: loss = %f' % (i+1, sess.run(total_loss)))
+            result = sess.run(target_net['input'])
+            output_path = os.path.join(OUTPUT_DIR, 'result_%s.png' % (str(i).zfill(4)))
+            write_image(output_path, result)
+    '''
+
+    optimizer = tf.contrib.opt.ScipyOptimizerInterface(
+        total_loss, method='L-BFGS-B',
+        options={'maxiter': ITERATION,
+                 'disp': LOG_ITERATION})    
+
+    if not os.path.exists(OUTPUT_DIR):
+        os.mkdir(OUTPUT_DIR)
+
+    init_op = tf.global_variables_initializer() # must!
+    sess = tf.Session()
+    sess.run(init_op)
+    sess.run( target_net['input'].assign(init_img) )
+    optimizer.minimize(sess)    
+
+
+    '''
+    out
+    '''
+    print('Iteration %d: loss = %f' % (ITERATION, sess.run(total_loss)))
+    result = sess.run(target_net['input'])
+    output_path = os.path.join(OUTPUT_DIR, 'result_final.png')
+    write_image(output_path, result)
 
 
 if __name__ == '__main__':

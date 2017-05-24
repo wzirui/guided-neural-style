@@ -70,7 +70,7 @@ def build_mask_net(input_tensor, mask_downsample_type):
             elif layer_kind == 'pool':
                 current = tf.nn.max_pool(current, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
             net[name] = current     
-    # hard, keep boundary
+    # hard, keep the padding boundary unchanged
     elif mask_downsample_type == 'inside':
         current = 1 - current
         for name in vgg_layers:
