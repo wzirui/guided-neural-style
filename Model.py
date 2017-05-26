@@ -20,7 +20,7 @@ vgg_layers = (
 
 def prepare_model(path):
     vgg_rawnet = scipy.io.loadmat(path)
-    return vgg_rawnet['layers'][0]
+    return vgg_rawnet['layers'][0] # another solution: global vgg_weights
 
 def build_image_net(input_tensor, vgg_weights, feature_pooling_type):
     net = {}
