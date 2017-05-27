@@ -80,7 +80,7 @@ def parse_args():
         help='Style loss weight')
 
     parser.add_argument('--tv_weight', type=float,
-        default=0.,
+        default=0.3,
         help='Total variation loss weight')
 
     parser.add_argument('--optimizer', type=str,
@@ -93,7 +93,7 @@ def parse_args():
         help='learning rate for adam optimizer')
 
     parser.add_argument('--iteration', type=int,
-        default=500,
+        default=1000,
         help='max iterations of training')
 
     # 10 is good for l-bfgs interface?
