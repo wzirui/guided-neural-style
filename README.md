@@ -59,9 +59,7 @@ python stylize.py \
 
 <img src="images/castle.jpg" width="192px">
 <img src="images/castle_guide.jpg" width="192px" border="1">
-
 <br>(left to right: content image, target mask, style image, style mask)<br>
-
 <img src="examples/guided-transfer/castle_house_partial.png" width="256px">
 <br>(castle region -> house region, sky is unchanged)
 </p>
