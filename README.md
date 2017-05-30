@@ -159,11 +159,11 @@ Different mask manipulation methods control the actual receptive fields of speci
 There are 4 choices for `--mask_downsample_type`(default is 'simple'): 'simple', 'inside', 'all' and 'mean'. The first three get idea from Gatys' paper while 'mean' comes from Ulyanov's blog. My implementations are not completely the same.
 
 <p align="center">
-<img src="examples/downsample/all.png" width="192px">
-<img src="examples/downsample/simple.png" width="192px">
-<img src="examples/downsample/mean.png" width="192px">
-<img src="examples/downsample/inside.png" width="192px">
-<br>(left to right: all, simple, mean, inside)
+<img src="examples/downsample/all.png" width="384px">
+<img src="examples/downsample/simple.png" width="384px">
+<img src="examples/downsample/mean.png" width="384px">
+<img src="examples/downsample/inside.png" width="384px">
+<br>(upper row: all, simple; lower row: mean, inside)
 </p>
 
 As we can see, with 'all' or 'simple' methods, the styles of sky and house are leaking into the other region(the clouds get style of yellow brick, the roofs become blurred); while with 'inside' method, the boundary is not well stylized. 'Mean' method is almost the same as 'simple'(I think 'mean' is a little bit better actually).
