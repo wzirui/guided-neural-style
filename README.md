@@ -9,8 +9,9 @@ This is a tensorflow implementation of spatially controlled neural style transfe
 - The spatial control part of [Controlling Perceptual Factors in Neural Style Transfer(Gatys et al.)](https://arxiv.org/abs/1611.07865) and [its supplementary materials](http://bethgelab.org/media/uploads/stylecontrol/supplement/)
 
 ## Usage & Examples
-Run `python stylize.py --help` or check `Parser.py` to see a full list of options.
 It takes a few minutes on a GeForce GTX TITAN X GPU to produce a 512x512 pixel image for 1000 iterations.
+
+Run `python stylize.py --help` or check `Parser.py` to see a full list of options.
 
 ### Simple Style Transfer
 ```
@@ -56,7 +57,6 @@ python stylize.py \
 <p align="center">
 <img src="images/house.jpg" width="192px">
 <img src="images/house_guide.jpg" width="192px" border="1">
-
 <img src="images/castle.jpg" width="192px">
 <img src="images/castle_guide.jpg" width="192px" border="1">
 <br>(left to right: content image, target mask, style image, style mask)<br>
@@ -104,7 +104,7 @@ Other results:
 <img src="images/grass.jpg" width="256px">
 
 <img src="examples/guided-transfer/grass_house.png" width="256px">
-<br>(sky->face; grass->background)
+<br>(sky->sky; grass->house)
 </p>
 
 <p align="center">
@@ -149,12 +149,12 @@ Reproduce the coastline image in [neural doodle](https://github.com/alexjc/neura
 <br>
 <img src="images/Monet/Monet_doodle.png" width="256px">
 <img src="examples/guided-texture/Monet_result.png" width="256px">
-<br>(my result is not so good)
+<br>(my result is not so good on the color boundaries. Please launch a pull request if you have some idea ^_^)
 </p>
 
 
 ### Comparison: Different Mask Propagation Methods
-Different mask manipulation methods control the actual receptive fields of specific regions. Here we reproduce the figure 2 from supplementary material of Gatys' paper.
+Different mask manipulation methods control the actual receptive fields of specific regions. Here we reproduce the figure 2 from [supplementary material](http://bethgelab.org/media/uploads/stylecontrol/supplement/) of Gatys' paper.
 
 There are 4 choices for `--mask_downsample_type`(default is 'simple'): 'simple', 'inside', 'all' and 'mean'. The first three get idea from Gatys' paper while 'mean' comes from Ulyanov's blog. My implementations are not completely the same.
 
@@ -171,7 +171,7 @@ As we can see, with 'all' or 'simple' methods, the styles of sky and house are l
 
 ## Forthcoming
 - transfering regional styles from multiple style sources
-- discussion about some details
+- discussion about some details and bad results
 
 ## Requirements
 ### Dependencies
@@ -182,7 +182,8 @@ As we can see, with 'all' or 'simple' methods, the styles of sky and house are l
 - sklearn
 
 ### Pretrained VGG-19 Model
-VGG-19 Model: http://www.vlfeat.org/matconvnet/models/imagenet-vgg-verydeep-19.mat
+VGG-19 Model: http://www.vlfeat.org/matconvnet/models/imagenet-vgg-verydeep-19.mat.
+
 After downloading, put it in the top level of this repository.
 
 ## Acknowledgements
