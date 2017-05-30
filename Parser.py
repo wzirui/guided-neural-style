@@ -17,15 +17,14 @@ def parse_args():
     parser.add_argument('--style_mask', type=str,
         help='style mask path')
 
-    # 'simple': no mask
-    # 'single' 'double': get black(0)-and-white(255) rgb or greyscale image, give 1 or 2 mask
-    parser.add_argument('--mask_type', type=str, 
-        default='simple',
-        choices=['simple', 'single', 'double'],
-        help='How to treat the input mask')
+    # colors = 1: only use white region
+    # colors > 1: use all colors
+    parser.add_argument('--mask_n_colors', type=int,
+        default=1,
+        help='Number of colors in the given mask')
 
     parser.add_argument('--hard_width', type=int,
-        help='If set, resize the content, style and mask images')
+        help='If set, resize the content, style and mask images to the same width')
 
     parser.add_argument('--init_noise_ratio', type=float,
         default=0.0,
@@ -76,11 +75,11 @@ def parse_args():
         help='Content loss weight')
 
     parser.add_argument('--style_weight', type=float,
-        default=0.05,
+        default=0.2,
         help='Style loss weight')
 
     parser.add_argument('--tv_weight', type=float,
-        default=0.3,
+        default=0.,
         help='Total variation loss weight')
 
     parser.add_argument('--optimizer', type=str,
@@ -99,7 +98,7 @@ def parse_args():
     # 10 is good for l-bfgs interface?
     parser.add_argument('--log_iteration', type=int,
         default=10,
-        help='Number of iterations to print loss. For adam, also save intermediate result.')
+        help='Number of iterations to print loss. For adam, also save intermediate result. For L-BFGS, don\'t larger than 10')
 
     parser.add_argument('--output_dir', type=str,
         default='./output',

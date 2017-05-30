@@ -3,6 +3,7 @@ import sys
 import tensorflow as tf
 import numpy as np
 import scipy.misc
+from sklearn.cluster import KMeans
 
 import Model
 import Parser
@@ -13,7 +14,6 @@ import Parser
 '''
 def read_image(path, hard_width):   # read and preprocess
     img = scipy.misc.imread(path)      
-    # optional resize, imresize() can only resize uint8 ndarray?
     if hard_width:
         img = scipy.misc.imresize(img, float(hard_width) / img.shape[1])
     img = img.astype(np.float32)
@@ -21,22 +21,50 @@ def read_image(path, hard_width):   # read and preprocess
     img = img - [123.68, 116.779, 103.939]
     return img
 
-def read_mask(path, mask_type, hard_width):   # stacked 0./1. mask
-    if mask_type == 'single' or 'double':
-        rawmask = scipy.misc.imread(path)
-        # optinal resize
-        if hard_width:
-            rawmask = scipy.misc.imresize(rawmask, float(hard_width) / rawmask.shape[1])
-        rawmask = rawmask.astype(np.float32)   
-        if len(rawmask.shape) == 3: # rgb
-            single = (rawmask.transpose([2, 0, 1]))[0]
-        elif len(rawmask.shape) == 2: # grey
-            single = rawmask
-        single = single / 255.
-        if mask_type == 'single':
-            return np.stack([single])
-        else: # double
-            return np.stack([single, 1.-single])
+def read_single_mask(path, hard_width): 
+    rawmask = scipy.misc.imread(path)
+    if hard_width:
+        rawmask = scipy.misc.imresize(rawmask, float(hard_width) / rawmask.shape[1], interp='nearest')    
+    rawmask = rawmask / 255 # integer division, only pure white pixels become 1
+    rawmask = rawmask.astype(np.float32)   
+    single = (rawmask.transpose([2, 0, 1]))[0]
+    return np.stack([single])
+
+# colorful, run K-Means to get rid of possible intermediate colors
+def read_colorful_mask(target_path, style_path, hard_width, n_colors):
+    if target_path is None or style_path is None:
+        raise AttributeError("mask path can't be empty when n_colors > 1 ")
+
+    target_mask = scipy.misc.imread(target_path)
+    style_mask = scipy.misc.imread(style_path)
+    if hard_width: # use 'nearest' to avoid more intermediate colors
+        target_mask = scipy.misc.imresize(target_mask, float(hard_width) / target_mask.shape[1], 
+            interp='nearest') 
+        style_mask = scipy.misc.imresize(style_mask, float(hard_width) / style_mask.shape[1], 
+            interp='nearest')
+    
+    # flatten
+    target_shape = target_mask.shape[0:2]
+    target_mask = target_mask.reshape([target_shape[0]*target_shape[1], -1])
+    style_shape = style_mask.shape[0:2]
+    style_mask = style_mask.reshape([style_shape[0]*style_shape[1], -1])
+
+    # cluster
+    kmeans = KMeans(n_clusters=n_colors, random_state=0).fit(style_mask)
+
+    # predict
+    target_labels = kmeans.predict(target_mask.astype(np.float32))
+    target_labels = target_labels.reshape([target_shape[0], target_shape[1]])
+    style_labels = kmeans.predict(style_mask.astype(np.float32))
+    style_labels = style_labels.reshape([style_shape[0], style_shape[1]])
+
+    # stack
+    target_masks = []
+    style_masks = []
+    for i in range(n_colors):
+        target_masks.append( (target_labels == i).astype(np.float32) )
+        style_masks.append( (style_labels == i).astype(np.float32) )
+    return np.stack(target_masks), np.stack(style_masks)
 
 def write_image(path, img):   # postprocess and write
     img = img + [123.68, 116.779, 103.939]
@@ -193,23 +221,40 @@ def  main(args):
     '''
     init 
     '''  
-    # read images
-    content_img = read_image(args.content_img, args.hard_width)   # read & preprocess
-    style_img = read_image(args.style_img, args.hard_width)       # read & preprocess
+    # read images and preprocess
+    if args.content_img:
+        content_img = read_image(args.content_img, args.hard_width) 
+    style_img = read_image(args.style_img, args.hard_width) 
 
     # get stacked 0./1. masks
-    if args.mask_type == 'simple':
-        target_masks_origin = np.ones(content_img.shape[0:3]).astype(np.float32)
-        style_masks_origin = np.ones(style_img.shape[0:3]).astype(np.float32)
-    else:
-        target_masks_origin = read_mask(args.target_mask, args.mask_type, args.hard_width) 
-        style_masks_origin = read_mask(args.style_mask, args.mask_type, args.hard_width)
+    if args.mask_n_colors > 1: # colorful
+        target_masks_origin, style_masks_origin = read_colorful_mask(args.target_mask, args.style_mask, 
+                                                    args.hard_width, args.mask_n_colors)    
+    
+    else: # single mask
+        if args.target_mask is None:
+            if args.content_img:
+                target_masks_origin = np.ones(content_img.shape[0:3]).astype(np.float32)
+            else:
+                target_masks_origin = np.ones(style_img.shape[0:3]).astype(np.float32)   
+        else:
+            target_masks_origin = read_single_mask(args.target_mask, args.hard_width)
 
-    # init img
-    init_img = get_init_image(content_img, args.init_noise_ratio)
+        if args.style_mask is None:
+            style_masks_origin = np.ones(style_img.shape[0:3]).astype(np.float32)
+        else:
+            style_masks_origin = read_single_mask(args.style_mask, args.hard_width)
+
+    # init img & target shape
+    if args.content_img:
+        target_shape = content_img.shape
+        init_img = get_init_image(content_img, args.init_noise_ratio)
+    else:
+        target_shape = [1] + list(target_masks_origin.shape[1:3]) + [3]
+        init_img = np.random.uniform(-20., 20., target_shape).astype(np.float32)
 
     # check shape & number of masks
-    if content_img.shape[1:3] != target_masks_origin.shape[1:3]:
+    if args.content_img and content_img.shape[1:3] != target_masks_origin.shape[1:3]:
         print('content and mask have different shape')
         sys.exit(0)
     if style_img.shape[1:3] != style_masks_origin.shape[1:3]:
@@ -226,8 +271,9 @@ def  main(args):
     vgg_weights = Model.prepare_model(args.model_path)
 
     # feature maps of specific layers
-    content_features = compute_features(vgg_weights, args.feature_pooling_type, 
-        content_img, args.content_layers)   
+    if args.content_img:
+        content_features = compute_features(vgg_weights, args.feature_pooling_type, 
+            content_img, args.content_layers)   
     style_features = compute_features(vgg_weights, args.feature_pooling_type, 
         style_img, args.style_layers)
 
@@ -238,22 +284,28 @@ def  main(args):
         args.mask_downsample_type)
 
     # build net
-    target_net = build_target_net(vgg_weights, args.feature_pooling_type, content_img.shape)
+    target_net = build_target_net(vgg_weights, args.feature_pooling_type, target_shape)
 
 
     '''
     loss 
     '''
-    content_loss = sum_content_loss(target_net, content_features, 
-                                    args.content_layers, args.content_layers_weights,
-                                    args.content_loss_normalization)
+    if args.content_img:
+        content_loss = sum_content_loss(target_net, content_features, 
+                                        args.content_layers, args.content_layers_weights,
+                                        args.content_loss_normalization)
+    else:
+        content_loss = 0.
 
     style_masked_loss = sum_masked_style_loss(target_net, style_features, 
                                               target_masks, style_masks, 
                                               args.style_layers, args.style_layers_weights, 
                                               args.mask_normalization_type)
 
-    tv_loss = sum_total_variation_loss(target_net['input'], content_img.shape)
+    if args.tv_weight != 0.:
+        tv_loss = sum_total_variation_loss(target_net['input'], target_shape)
+    else:
+        tv_loss = 0.
 
     total_loss = args.content_weight * content_loss + \
                  args.style_weight * style_masked_loss + \
